@@ -153,6 +153,13 @@ input, select, textarea { font: inherit; color: var(--text); }
 .chip.info { background: var(--info-soft); color: var(--info); }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
 .chips::-webkit-scrollbar { display: none; }
+/* Mouse users can drag rows sideways (see services/dragScroll.ts). */
+@media (hover: hover) and (pointer: fine) {
+  .chips { cursor: grab; }
+  .chips > * { cursor: pointer; }
+  .chips.dragging, .chips.dragging > * { cursor: grabbing; user-select: none; }
+  .chips.dragging { scroll-snap-type: none; }
+}
 button.chip { border: 1px solid var(--border); background: var(--surface); padding: 7px 14px; font-size: 13px; }
 button.chip.on { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
 
