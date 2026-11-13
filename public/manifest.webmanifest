@@ -3,7 +3,7 @@
   "short_name": "MediNear",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#f6f8f8",
-  "theme_color": "#0f766e",
+  "background_color": "#f5f8ff",
+  "theme_color": "#1d4ed8",
   "icons": [{ "src": "favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

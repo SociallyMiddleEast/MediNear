@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useDirectory } from '../../services/directory';
 import { distanceKm } from '../../data/generator';
+import { emergencyNumber } from '../../data/countries';
 import { Empty, Meter, MiniMap, Stars, TopBar, km } from '../../components/ui';
 
 const waitChip = (m: number) => (m < 30 ? 'ok' : m < 60 ? 'warn' : 'danger');
@@ -20,10 +21,10 @@ export default function Hospitals() {
     <>
       <TopBar title="Hospitals" />
       <div className="page">
-        <a href="tel:112" className="card row" style={{ background: 'var(--danger-soft)', borderColor: 'transparent', color: 'var(--danger)' }}>
+        <a href={`tel:${emergencyNumber(user?.country)}`} className="card row" style={{ background: 'var(--danger-soft)', borderColor: 'transparent', color: 'var(--danger)' }}>
           <div style={{ fontSize: 26 }}>🚨</div>
-          <div className="grow"><div className="bold">Medical emergency?</div><div className="small">Call your local emergency number now.</div></div>
-          <span className="btn sm danger" style={{ background: 'var(--danger)', color: '#fff' }}>Call</span>
+          <div className="grow"><div className="bold">Medical emergency?</div><div className="small">Call {emergencyNumber(user?.country)} now — the ambulance number for your country.</div></div>
+          <span className="btn sm danger" style={{ background: 'var(--danger)', color: '#fff' }}>Call {emergencyNumber(user?.country)}</span>
         </a>
         <MiniMap center={center} pins={list.map((h) => ({ at: h.location, icon: '🏥', label: h.name }))} />
         <div className="chips">

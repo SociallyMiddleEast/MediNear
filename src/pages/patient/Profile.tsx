@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { resetDemoData } from '../../services/backend';
 import { detectLocation } from '../../services/location';
-import { COUNTRIES, countryName, flag, ID_TYPES, insurersFor } from '../../data/countries';
+import { COUNTRIES, countryName, flag, ID_TYPES } from '../../data/countries';
+import { InsuranceFields, emptyPlan, finalizePlans, validatePlans, type PlanDraft } from '../../components/InsuranceFields';
+import { ThemePicker } from '../../components/ThemePicker';
 import { Avatar, Modal, TopBar, ageFrom, fmtDate, toast } from '../../components/ui';
 import type { IdentityDoc } from '../../types';
 
@@ -14,7 +16,8 @@ export default function Profile() {
   const [locating, setLocating] = useState(false);
   const [editIns, setEditIns] = useState(false);
   const [addDoc, setAddDoc] = useState(false);
-  const [ins, setIns] = useState({ provider: user?.insuranceProvider ?? '', id: user?.insuranceId ?? '' });
+  const [plans, setPlans] = useState<PlanDraft[]>([]);
+  const [planErr, setPlanErr] = useState('');
   const [doc, setDoc] = useState<IdentityDoc>({ type: 'National ID card', number: '' });
   if (!user) return null;
   const isPatient = user.role === 'patient';
@@ -63,11 +66,27 @@ export default function Profile() {
 
         {isPatient ? (
           <>
-            <div className="hero stack" style={{ minHeight: 170 }}>
-              <div className="row between"><span className="tiny muted">HEALTH INSURANCE</span><button className="chip" style={{ border: 0 }} onClick={() => setEditIns(true)}>Edit</button></div>
-              <h2>{user.insuranceProvider || 'No insurance on file'}</h2>
-              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 18, letterSpacing: 2 }}>{user.insuranceId ? mask(user.insuranceId) : '—'}</div>
-              <div className="row between small"><span>{user.fullName}</span><span className="muted">{flag(user.country)} {user.country}</span></div>
+            <div className="stack">
+              <div className="row between">
+                <h3>🛡️ My insurance{(user.insurances?.length ?? 0) > 1 ? ` (${user.insurances!.length} plans)` : ''}</h3>
+                <button className="btn sm soft" onClick={() => { setPlans(user.insurances?.length ? user.insurances.map((p) => ({ ...p })) : [emptyPlan(0)]); setPlanErr(''); setEditIns(true); }}>
+                  {user.insurances?.length ? 'Manage' : '+ Add insurance'}
+                </button>
+              </div>
+              {!user.insurances?.length && <div className="card flat small muted">No insurance on file — you’re listed as self-pay.</div>}
+              <div className="grid">
+                {(user.insurances ?? []).map((p, i) => {
+                  const expired = p.validUntil && p.validUntil < new Date().toISOString().slice(0, 10);
+                  return (
+                    <div key={i} className="hero stack" style={{ minHeight: 150, opacity: expired ? 0.6 : 1 }}>
+                      <div className="row between"><span className="tiny muted">{p.type.toUpperCase()}</span>{expired && <span className="chip danger">Expired</span>}</div>
+                      <h3 style={{ fontSize: 18 }}>{p.provider}</h3>
+                      <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 17, letterSpacing: 2 }}>{mask(p.memberId)}</div>
+                      <div className="row between small"><span>{p.policyHolder || user.fullName}</span><span className="muted">{p.validUntil ? `Valid to ${fmtDate(p.validUntil, { month: 'short', year: 'numeric' })}` : ''}</span></div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div className="card stack">
               <div className="row between">
@@ -96,6 +115,11 @@ export default function Profile() {
         )}
 
         <div className="card stack sm">
+          <h3>🎨 Appearance</h3>
+          <ThemePicker />
+        </div>
+
+        <div className="card stack sm">
           <h3>⚙️ App</h3>
           <div className="tiny muted">MediNear v0.1 · Demo mode — all data is stored only in this browser.</div>
           <button className="btn ghost" onClick={async () => { await signOut(); nav('/', { replace: true }); }}>Sign out</button>
@@ -103,13 +127,15 @@ export default function Profile() {
         </div>
       </div>
 
-      <Modal open={editIns} onClose={() => setEditIns(false)} title="Insurance">
-        <select className="select input" value={ins.provider} onChange={(e) => setIns({ ...ins, provider: e.target.value })}>
-          <option value="">Select…</option>
-          {[...new Set([ins.provider, ...insurersFor(user.country)].filter(Boolean))].map((i) => <option key={i}>{i}</option>)}
-        </select>
-        <input className="input" placeholder="Member ID" value={ins.id} onChange={(e) => setIns({ ...ins, id: e.target.value })} />
-        <button className="btn block" onClick={async () => { await update({ insuranceProvider: ins.provider, insuranceId: ins.id }); setEditIns(false); toast('Insurance updated'); }}>Save</button>
+      <Modal open={editIns} onClose={() => setEditIns(false)} title="My insurance plans">
+        {planErr && <div className="error">{planErr}</div>}
+        <InsuranceFields plans={plans} onChange={setPlans} country={user.country} />
+        <button className="btn block" onClick={async () => {
+          const err = validatePlans(plans);
+          if (err) { setPlanErr(err); return; }
+          await update({ insurances: finalizePlans(plans) }); setEditIns(false); toast('Insurance updated');
+        }}>Save {plans.length} plan{plans.length === 1 ? '' : 's'}</button>
+        {plans.length > 0 && <button className="btn ghost block" onClick={async () => { await update({ insurances: [] }); setEditIns(false); toast('Set to self-pay'); }}>I no longer have insurance</button>}
       </Modal>
       <Modal open={addDoc} onClose={() => setAddDoc(false)} title="Add document">
         <select className="select input" value={doc.type} onChange={(e) => setDoc({ ...doc, type: e.target.value })}>{ID_TYPES.map((t) => <option key={t}>{t}</option>)}</select>

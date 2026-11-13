@@ -62,7 +62,13 @@ async function hash(password: string, salt: string) {
 interface StoredUser extends User { salt: string; passwordHash: string; }
 
 const delay = <T,>(v: T) => new Promise<T>((res) => setTimeout(() => res(v), 120));
-const strip = ({ salt: _s, passwordHash: _p, ...u }: StoredUser): User => u;
+const strip = ({ salt: _s, passwordHash: _p, ...u }: StoredUser): User => {
+  // Migrate accounts created before multiple insurance plans were supported.
+  if (!u.insurances && u.insuranceProvider && u.insuranceProvider !== 'Uninsured / self-pay')
+    u.insurances = [{ provider: u.insuranceProvider, memberId: u.insuranceId ?? '', type: 'Primary' }];
+  delete u.insuranceProvider; delete u.insuranceId;
+  return u;
+};
 
 function listOf<T extends { id: string }>(name: string) {
   return {
@@ -106,6 +112,7 @@ const localBackend: Backend = {
     const i = users.findIndex((u) => u.id === id);
     if (i < 0) throw new Error('User not found');
     users[i] = { ...users[i], ...patch, id, role: users[i].role };
+    if (patch.insurances) { delete users[i].insuranceProvider; delete users[i].insuranceId; }
     write('users', users);
     return delay(strip(users[i]));
   },
@@ -151,7 +158,7 @@ export async function ensureDemoAccounts(country: string) {
   if (read<boolean>('demoSeeded', false)) return;
   const base = { country, createdAt: new Date().toISOString(), locationSource: 'timezone' as const };
   const profiles: Record<User['role'], Partial<User>> = {
-    patient: { fullName: 'Alex Morgan', dateOfBirth: '1991-04-18', gender: 'Prefer not to say', bloodType: 'O+', insuranceProvider: 'AXA', insuranceId: 'AXA-5583-2201', documents: [{ type: 'Passport', number: 'P00000000' }] },
+    patient: { fullName: 'Alex Morgan', dateOfBirth: '1991-04-18', gender: 'Prefer not to say', bloodType: 'O+', insurances: [{ provider: 'AXA Global Healthcare', memberId: 'AXA-5583-2201', type: 'Primary' }, { provider: 'Bupa Global', memberId: 'BG-771-0934', type: 'Secondary / top-up', policyHolder: 'Employer: Northwind Ltd' }], documents: [{ type: 'Passport', number: 'P00000000' }] },
     doctor: { fullName: 'Dr. Layla Haddad', providerId: 'doc-demo', licenseNumber: 'MD-20431', organisation: 'Haddad Heart & Vascular Clinic' },
     pharmacy: { fullName: 'Sami Nader', providerId: 'pha-demo', licenseNumber: 'PH-7781', organisation: 'MediNear Partner Pharmacy' },
     hospital: { fullName: 'Hospital Admin', providerId: 'hos-demo', licenseNumber: 'HOS-1102', organisation: 'Cedars University Medical Center' },

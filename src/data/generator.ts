@@ -7,9 +7,16 @@
 
 import type { Doctor, GeoPoint, Hospital, Lab, Pharmacy } from '../types';
 import {
-  AWARDS, CERTS, FIRST_F, FIRST_M, HOSPITAL_DEPTS, LAB_BASE_PRICE, LAB_TESTS, LANGS, LAST, MED_BASE_PRICE,
+  AWARDS, CERTS, HOSPITAL_DEPTS, LAB_BASE_PRICE, LAB_TESTS, LANGS, MED_BASE_PRICE,
   MED_SCHOOLS, MEDICINES, RESIDENCY_SITES, REVIEW_TEXTS, SPECIALTIES, STREETS, SUBSPECIALTIES,
 } from './catalog';
+import { dialCode } from './countries';
+import { localLanguages, namesFor, schoolsFor } from './locale';
+
+// Country the directory is being generated for (names, languages, phone codes).
+let COUNTRY = 'US';
+export const setGeneratorCountry = (c: string) => { COUNTRY = c; };
+const phone = (r: () => number) => `+${dialCode(COUNTRY)} ${Math.floor(100 + r() * 900)} ${Math.floor(1000 + r() * 9000)}`;
 
 export function mulberry32(seed: number) {
   return () => {
@@ -52,15 +59,17 @@ export function makeDoctor(r: Rng, id: string, specialty: string, center: GeoPoi
   // Fixed values (demo / registered doctors) must also drive the generated text.
   const gR: 'F' | 'M' = r() < 0.5 ? 'F' : 'M';
   const gender = fixed?.gender ?? gR;
-  const fR = pick(r, gender === 'F' ? FIRST_F : FIRST_M);
-  const lR = pick(r, LAST);
+  const pool = namesFor(COUNTRY);
+  const fR = pick(r, gender === 'F' ? pool.f : pool.m);
+  const lR = pick(r, pool.l);
   const parts = fixed?.name?.replace(/^Dr\.?\s+/i, '').trim().split(/\s+/) ?? [];
   const first = parts[0] ?? fR;
   const last = parts.length > 1 ? parts[parts.length - 1] : lR;
   const yR = int(r, 4, 32);
   const years = fixed?.yearsExperience ?? yR;
   const since = THIS_YEAR - years;
-  const [school, schoolCity] = pick(r, MED_SCHOOLS);
+  // Most doctors studied locally; some abroad.
+  const [school, schoolCity] = r() < 0.65 ? pick(r, schoolsFor(COUNTRY)) : pick(r, MED_SCHOOLS);
   const [res, resCity] = pick(r, RESIDENCY_SITES);
   const [fel, felCity] = pick(r, RESIDENCY_SITES);
   const mdStart = since - 10;
@@ -79,7 +88,7 @@ export function makeDoctor(r: Rng, id: string, specialty: string, center: GeoPoi
   ];
   const rating = round1(3.8 + r() * 1.2);
   const reviews = pickN(r, REVIEW_TEXTS, 3).map((text) => ({
-    author: `${pick(r, [...FIRST_F, ...FIRST_M])} ${pick(r, LAST)[0]}.`,
+    author: `${pick(r, [...pool.f, ...pool.m])} ${pick(r, pool.l)[0]}.`,
     rating: Math.min(5, Math.max(3, Math.round(rating + (r() - 0.5)))),
     date: new Date(Date.now() - int(r, 3, 300) * 864e5).toISOString(),
     text,
@@ -97,7 +106,7 @@ export function makeDoctor(r: Rng, id: string, specialty: string, center: GeoPoi
     certifications: pickN(r, CERTS, int(r, 2, 4)),
     awards: pickN(r, AWARDS, int(r, 0, 3)).map((a) => `${a} (${int(r, since, THIS_YEAR)})`),
     publications: int(r, 0, 60),
-    languages: ['English', ...pickN(r, LANGS.slice(1), int(r, 1, 2))],
+    languages: [...new Set(['English', ...localLanguages(COUNTRY).slice(0, int(r, 1, 2)), ...(r() < 0.3 ? [pick(r, LANGS.slice(1))] : [])])],
     clinics,
     location: loc,
     rating,
@@ -119,7 +128,7 @@ export function makeDoctor(r: Rng, id: string, specialty: string, center: GeoPoi
   return { ...doc, ...fixed };
 }
 
-const PHARMACY_NAMES = ['Cedar', 'Green Cross', 'Al Shifa', 'Wellness', 'Family', 'Central', 'Mazen', 'Life', 'Sunrise', 'Corner', 'Bloom', 'Medicare', 'Unity', 'Health Plus', 'Hikma Care', 'Riverside'];
+const PHARMACY_NAMES = ['Green Cross', 'Wellness', 'Family', 'Central', 'Life', 'Sunrise', 'Corner', 'Bloom', 'Unity', 'Health Plus', 'Riverside', 'City', 'Park', 'Care', 'Main Street', 'Lotus'];
 export function makePharmacy(r: Rng, id: string, center: GeoPoint, city: string, fixedName?: string): Pharmacy {
   const factor = 0.85 + r() * 0.35; // each pharmacy is a bit cheaper/dearer
   const stock = MEDICINES.filter(() => r() < 0.72).map((m) => {
@@ -133,18 +142,18 @@ export function makePharmacy(r: Rng, id: string, center: GeoPoint, city: string,
     address: address(r, city),
     location: fixedName ? offset(center, 0.6, 40) : near(r, center, 6),
     hours: open24h ? 'Open 24 hours' : `${int(r, 7, 9)}:00 – ${int(r, 20, 23)}:00`,
-    phone: `+${int(r, 1, 99)} ${int(r, 100, 999)} ${int(r, 1000, 9999)}`,
+    phone: phone(r),
     rating: round1(3.7 + r() * 1.3),
     delivery: r() < 0.6,
   };
 }
 
-const HOSPITAL_PREFIX = ['St. George', 'Cedars', 'Mount Hope', 'Royal', 'Clemenceau', 'University', 'Mercy', 'Riverside', 'Saint Joseph', 'Rafik'];
+const HOSPITAL_PREFIX = ['St. George', 'Mount Hope', 'Royal', 'University', 'Mercy', 'Riverside', 'Saint Joseph', 'National', 'Central', 'Memorial', 'Good Samaritan', 'Children’s & General'];
 export function makeHospital(r: Rng, id: string, center: GeoPoint, city: string, fixedName?: string): Hospital {
   const beds = int(r, 80, 650);
   return {
     id,
-    name: fixedName ?? `${pick(r, HOSPITAL_PREFIX)} ${pick(r, ['Hospital', 'Medical Center', 'University Hospital', 'General Hospital'])}`,
+    name: fixedName ?? (r() < 0.25 ? `${city === 'City Center' ? 'Metropolitan' : city} General Hospital` : `${pick(r, HOSPITAL_PREFIX)} ${pick(r, ['Hospital', 'Medical Center', 'University Hospital', 'General Hospital'])}`),
     type: pick(r, ['Private', 'Public', 'University', 'Non-profit']),
     address: address(r, city),
     location: fixedName ? offset(center, 2.1, 200) : near(r, center, 12),
@@ -153,7 +162,7 @@ export function makeHospital(r: Rng, id: string, center: GeoPoint, city: string,
     erWaitMins: int(r, 5, 95),
     departments: pickN(r, HOSPITAL_DEPTS, int(r, 6, 12)),
     rating: round1(3.6 + r() * 1.4),
-    phone: `+${int(r, 1, 99)} ${int(r, 100, 999)} ${int(r, 1000, 9999)}`,
+    phone: phone(r),
     accreditation: pick(r, ['JCI accredited', 'ISO 9001', 'National accreditation', 'Accreditation Canada']),
     emergency: r() < 0.85,
     founded: int(r, 1890, 2015),
@@ -191,12 +200,13 @@ export const DEMO_IDS = { doctor: 'doc-demo', pharmacy: 'pha-demo', hospital: 'h
 
 const cache = new Map<string, Directory>();
 
-export function generateDirectory(center: GeoPoint, city: string, insurers: string[]): Directory {
-  const key = `${center.lat.toFixed(2)},${center.lng.toFixed(2)}`;
+export function generateDirectory(center: GeoPoint, city: string, insurers: string[], country = 'US'): Directory {
+  setGeneratorCountry(country);
+  const key = `${country}:${center.lat.toFixed(2)},${center.lng.toFixed(2)}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const r = mulberry32(Math.round((center.lat + 90) * 1000) * 100003 + Math.round((center.lng + 180) * 1000));
-  const ins = insurers.filter((i) => i !== 'Other' && i !== 'Uninsured / self-pay');
+  const ins = insurers.filter((i) => i !== 'Other');
 
   const doctors: Doctor[] = [
     makeDoctor(mulberry32(42), DEMO_IDS.doctor, 'Cardiology', center, city, ins, {

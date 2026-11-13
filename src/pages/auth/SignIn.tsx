@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../../services/backend';
+import { ThemeToggle } from '../../components/ThemePicker';
 
 const ICON: Record<string, string> = { patient: '🙂', doctor: '🩺', pharmacy: '💊', hospital: '🏥', lab: '🧪' };
 
@@ -26,7 +27,7 @@ export default function SignIn() {
   return (
     <div className="auth-wrap">
       <form className="auth-card" onSubmit={submit}>
-        <Link to="/" className="brand"><div className="logo">✚</div>MediNear</Link>
+        <div className="row between"><Link to="/" className="brand"><div className="logo">✚</div>MediNear</Link><ThemeToggle /></div>
         <div>
           <h1>Welcome back</h1>
           <p className="muted">Sign in to your patient or provider account.</p>

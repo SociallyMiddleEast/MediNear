@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import type { GeoPoint, IdentityDoc, Role } from '../../types';
-import { COUNTRIES, ID_TYPES, countryName, flag, insurersFor } from '../../data/countries';
+import { COUNTRIES, ID_TYPES, countryName, flag } from '../../data/countries';
+import { InsuranceFields, emptyPlan, finalizePlans, validatePlans, type PlanDraft } from '../../components/InsuranceFields';
 import { SPECIALTIES } from '../../data/catalog';
 import { centerOf, detectLocation, type DetectedLocation } from '../../services/location';
 import { ageFrom } from '../../components/ui';
+import { ThemeToggle } from '../../components/ThemePicker';
 
 const ROLES: { role: Role; icon: string; title: string; desc: string }[] = [
   { role: 'patient', icon: '🙂', title: 'Patient', desc: 'Find care, book visits, order tests' },
@@ -44,9 +46,8 @@ export default function SignUp() {
   const [gender, setGender] = useState('');
   const [bloodType, setBloodType] = useState('');
   // insurance + ids
-  const [insurer, setInsurer] = useState('');
-  const [insurerOther, setInsurerOther] = useState('');
-  const [insuranceId, setInsuranceId] = useState('');
+  const [plans, setPlans] = useState<PlanDraft[]>([emptyPlan(0)]);
+  const [uninsured, setUninsured] = useState(false);
   const [docs, setDocs] = useState<IdentityDoc[]>([{ type: 'Passport', number: '' }]);
   // provider
   const [organisation, setOrganisation] = useState('');
@@ -87,9 +88,7 @@ export default function SignUp() {
         if (age === undefined || age < 0 || age > 120) return 'Please enter a valid date of birth.';
         return '';
       case 'Insurance & ID': {
-        if (!insurer) return 'Select your insurance (or “Uninsured / self-pay”).';
-        if (insurer === 'Other' && !insurerOther.trim()) return 'Enter the name of your insurer.';
-        if (insurer !== 'Uninsured / self-pay' && insuranceId.trim().length < 3) return 'Enter your insurance member ID.';
+        if (!uninsured) { const e = validatePlans(plans); if (e) return e; }
         const filled = docs.filter((d) => d.number.trim());
         if (!filled.length) return 'Add at least one identity document (passport, ID card…).';
         if (filled.some((d) => d.number.trim().length < 4)) return 'Document numbers look too short.';
@@ -121,8 +120,7 @@ export default function SignUp() {
         ...(isPatient
           ? {
               dateOfBirth: dob, gender: gender || undefined, bloodType: bloodType || undefined,
-              insuranceProvider: insurer === 'Other' ? insurerOther.trim() : insurer,
-              insuranceId: insuranceId.trim() || undefined,
+              insurances: uninsured ? [] : finalizePlans(plans),
               documents: docs.filter((d) => d.number.trim()).map((d) => ({ ...d, number: d.number.trim() })),
             }
           : { organisation: organisation.trim(), licenseNumber: license.trim(), specialty: role === 'doctor' ? specialty : undefined }),
@@ -138,7 +136,7 @@ export default function SignUp() {
       <div className="auth-card">
         <div className="row between">
           <Link to="/" className="brand"><div className="logo">✚</div>MediNear</Link>
-          <span className="small muted">Step {step + 1} of {steps.length}</span>
+          <div className="row" style={{ gap: 8 }}><span className="small muted">Step {step + 1} of {steps.length}</span><ThemeToggle /></div>
         </div>
         <div className="steps">{steps.map((s, i) => <span key={s} className={i <= step ? 'on' : ''} />)}</div>
         <h1>{current === 'Account type' ? 'Create your account' : current}</h1>
@@ -229,17 +227,10 @@ export default function SignUp() {
         {current === 'Insurance & ID' && (
           <div className="stack">
             <div className="card flat stack">
-              <h3>🛡️ Health insurance</h3>
-              <Field label={`Insurer in ${countryName(country)}`}>
-                <select className="select input" value={insurer} onChange={(e) => setInsurer(e.target.value)}>
-                  <option value="">Select…</option>
-                  {insurersFor(country).map((i) => <option key={i}>{i}</option>)}
-                </select>
-              </Field>
-              {insurer === 'Other' && <Field label="Insurer name"><input className="input" value={insurerOther} onChange={(e) => setInsurerOther(e.target.value)} /></Field>}
-              {insurer && insurer !== 'Uninsured / self-pay' && (
-                <Field label="Insurance member ID"><input className="input" value={insuranceId} onChange={(e) => setInsuranceId(e.target.value)} placeholder="e.g. AXA-1234-5678" /></Field>
-              )}
+              <div className="row between"><h3>🛡️ Health insurance</h3><span className="tiny muted">Add all your plans</span></div>
+              <p className="small muted">Many people have more than one: public + private, employer + top-up, or a travel plan abroad.</p>
+              <label className="row small"><input type="checkbox" checked={uninsured} onChange={(e) => setUninsured(e.target.checked)} /> I don’t have health insurance (self-pay)</label>
+              {!uninsured && <InsuranceFields plans={plans} onChange={setPlans} country={country} />}
             </div>
             <div className="card flat stack">
               <div className="row between"><h3>🪪 Identity documents</h3><span className="tiny muted">Passport, national ID…</span></div>
@@ -292,7 +283,7 @@ export default function SignUp() {
               {isPatient ? (
                 <>
                   <Row k="Age" v={age !== undefined ? String(age) : '—'} />
-                  <Row k="Insurance" v={`${insurer === 'Other' ? insurerOther : insurer}${insuranceId ? ` · ${insuranceId}` : ''}`} />
+                  {uninsured ? <Row k="Insurance" v="Self-pay" /> : finalizePlans(plans).map((p, i) => <Row key={i} k={`Insurance · ${p.type}`} v={`${p.provider} · ${p.memberId}`} />)}
                   {docs.filter((d) => d.number).map((d, i) => <Row key={i} k={d.type} v={`•••• ${d.number.slice(-4)}`} />)}
                 </>
               ) : (

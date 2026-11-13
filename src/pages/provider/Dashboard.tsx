@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useDirectory } from '../../services/directory';
 import { backend } from '../../services/backend';
-import { conditionMix, mockAdmissions, mockDaySchedule, mockLabOrders, mockPatients, monthlySeries, topSellers } from '../../services/portal';
+import { setPortalCountry, conditionMix, mockAdmissions, mockDaySchedule, mockLabOrders, mockPatients, monthlySeries, topSellers } from '../../services/portal';
 import { BarChart, Meter, Stars, TopBar, fmtTime } from '../../components/ui';
 import { stageIndex } from '../../components/LabOrderCard';
 import { formatMoney } from '../../data/countries';
@@ -14,6 +14,7 @@ export function useProvider() {
   const { user } = useAuth();
   const { dir } = useDirectory(user);
   const pid = user?.providerId ?? user?.id ?? 'x';
+  setPortalCountry(user?.country);
   return {
     user: user!, pid, dir,
     doctor: dir.doctors.find((d) => d.id === pid),

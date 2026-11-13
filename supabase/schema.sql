@@ -31,10 +31,21 @@ create table patient_details (
   user_id uuid primary key references profiles on delete cascade,
   date_of_birth date not null,
   gender text,
-  blood_type text,
-  insurance_provider text,
-  insurance_member_id text            -- encrypt in production
+  blood_type text
 );
+
+-- A patient can hold several plans (public + private, employer + top-up, travel…).
+create table insurance_plans (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references profiles on delete cascade,
+  provider text not null,
+  member_id text not null,            -- encrypt in production
+  plan_type text not null default 'Primary',
+  policy_holder text,
+  valid_until date,
+  created_at timestamptz default now()
+);
+create index insurance_plans_user on insurance_plans (user_id);
 
 create table identity_documents (
   id uuid primary key default gen_random_uuid(),
@@ -178,6 +189,7 @@ $$;
 alter table profiles enable row level security;
 alter table patient_details enable row level security;
 alter table identity_documents enable row level security;
+alter table insurance_plans enable row level security;
 alter table appointments enable row level security;
 alter table lab_orders enable row level security;
 alter table lab_results enable row level security;
@@ -196,6 +208,10 @@ create policy "pharmacy edits stock" on pharmacy_stock for all
 create policy "own profile" on profiles for all using (id = auth.uid());
 create policy "own details" on patient_details for all using (user_id = auth.uid());
 create policy "own documents" on identity_documents for all using (user_id = auth.uid());
+create policy "own insurance" on insurance_plans for all using (user_id = auth.uid());
+create policy "doctor reads booked patient insurance" on insurance_plans for select using (
+  exists (select 1 from appointments a join providers p on p.id = a.doctor_id
+          where a.patient_id = insurance_plans.user_id and p.owner_id = auth.uid()));
 
 -- Appointments: the patient, or the doctor who owns the listing.
 create policy "appt patient" on appointments for all using (patient_id = auth.uid());

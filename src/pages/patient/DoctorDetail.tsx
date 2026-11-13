@@ -37,8 +37,10 @@ export default function DoctorDetail() {
     const dt = new Date(selectedDay); dt.setHours(h, m);
     return r() < 0.35 || dt < new Date() || booked.some((b) => b.status !== 'cancelled' && new Date(b.date).getTime() === dt.getTime());
   };
-  const ins = user?.insuranceProvider;
-  const covered = !!ins && d.acceptsInsurance.some((a) => a.toLowerCase() === ins.toLowerCase());
+  const myPlans = user?.insurances ?? [];
+  const accepted = new Set(d.acceptsInsurance.map((a) => a.toLowerCase()));
+  const coveredBy = myPlans.filter((p) => accepted.has(p.provider.toLowerCase()));
+  const covered = coveredBy.length > 0;
 
   const book = async () => {
     const [h, m] = slot.split(':').map(Number);
@@ -79,7 +81,7 @@ export default function DoctorDetail() {
             <span className="chip">🗓️ Practising since {d.practisingSince}</span>
             <span className="chip">💵 {formatMoney(d.fee, user?.country)} / visit</span>
             {d.telehealth && <span className="chip info">📹 Video visits</span>}
-            {ins && <span className={`chip ${covered ? 'ok' : 'warn'}`}>{covered ? `✓ Accepts ${ins}` : `${ins} not listed`}</span>}
+            {myPlans.length > 0 && <span className={`chip ${covered ? 'ok' : 'warn'}`}>{covered ? `✓ Accepts your ${coveredBy.map((p) => p.provider).join(' & ')}` : 'None of your insurances listed'}</span>}
           </div>
           <button className="btn block" onClick={() => setOpen(true)}>Book appointment</button>
         </div>
@@ -127,7 +129,7 @@ export default function DoctorDetail() {
           <div className="card stack">
             <h3>🛡️ Insurance accepted</h3>
             <div className="row wrap" style={{ gap: 6 }}>
-              {d.acceptsInsurance.map((a) => <span key={a} className={`chip ${a === ins ? 'ok' : ''}`}>{a}</span>)}
+              {d.acceptsInsurance.map((a) => <span key={a} className={`chip ${coveredBy.some((p) => p.provider.toLowerCase() === a.toLowerCase()) ? 'ok' : ''}`}>{a}</span>)}
               <span className="chip">Self-pay</span>
             </div>
           </div>
@@ -169,7 +171,7 @@ export default function DoctorDetail() {
         <textarea className="input" rows={2} placeholder="Reason for visit (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
         <div className="row between small">
           <span className="muted">Consultation fee</span>
-          <b>{formatMoney(d.fee, user?.country)}{covered ? ' · billed to insurance' : ''}</b>
+          <b>{formatMoney(d.fee, user?.country)}{covered ? ` · billed to ${coveredBy[0].provider}` : ''}</b>
         </div>
         <button className="btn block" disabled={!slot} onClick={book}>{slot ? `Confirm ${fmtDate(selectedDay.toISOString())} at ${slot}` : 'Pick a time'}</button>
       </Modal>

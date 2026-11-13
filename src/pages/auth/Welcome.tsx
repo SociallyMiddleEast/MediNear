@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { ThemeToggle } from '../../components/ThemePicker';
 
 const FEATURES = [
   ['🩺', 'Find doctors near you', 'Browse by specialty, compare credentials, book in seconds.'],
@@ -11,7 +12,7 @@ export default function Welcome() {
   return (
     <div className="auth-wrap">
       <div className="auth-card" style={{ maxWidth: 520 }}>
-        <div className="brand" style={{ fontSize: 24 }}><div className="logo">✚</div>MediNear</div>
+        <div className="row between"><div className="brand" style={{ fontSize: 24 }}><div className="logo">✚</div>MediNear</div><ThemeToggle /></div>
         <div className="hero stack">
           <h1 style={{ fontSize: 30 }}>Healthcare around you,<br />in one place.</h1>
           <p className="muted">Doctors, pharmacies, hospitals and labs near your location — with your insurance and records ready.</p>

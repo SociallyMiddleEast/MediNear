@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import type { Role } from '../types';
+import { ThemeToggle } from './ThemePicker';
 
 type NavItem = { to: string; icon: string; label: string };
 
@@ -55,7 +56,10 @@ export default function Layout() {
           <NavLink key={i.to} to={i.to} end={end(i.to)}><span>{i.icon}</span>{i.label}</NavLink>
         ))}
         <div style={{ flex: 1 }} />
-        {user?.role !== 'patient' && <div className="chip primary" style={{ alignSelf: 'flex-start' }}>Provider portal · {user?.role}</div>}
+        <div className="row between">
+          {user?.role !== 'patient' ? <div className="chip primary">Provider portal · {user?.role}</div> : <span />}
+          <ThemeToggle />
+        </div>
       </nav>
       <main className="main">
         <Outlet />

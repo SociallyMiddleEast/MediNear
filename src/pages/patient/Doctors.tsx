@@ -24,11 +24,11 @@ export default function Doctors() {
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
-    const ins = user?.insuranceProvider?.toLowerCase();
+    const mine = (user?.insurances ?? []).map((p) => p.provider.toLowerCase());
     return dir.doctors
       .filter((d) => !specialty || d.specialty === specialty)
       .filter((d) => !s || [d.name, d.specialty, ...d.subSpecialties, ...d.clinics.map((c) => c.name), ...d.languages].join(' ').toLowerCase().includes(s))
-      .filter((d) => !onlyInsurance || (ins && d.acceptsInsurance.some((a) => a.toLowerCase() === ins)))
+      .filter((d) => !onlyInsurance || d.acceptsInsurance.some((a) => mine.includes(a.toLowerCase())))
       .filter((d) => !onlyTele || d.telehealth)
       .filter((d) => !gender || d.gender === gender)
       .map((d) => ({ d, dist: distanceKm(center, d.location) }))
@@ -51,7 +51,7 @@ export default function Doctors() {
           <select className="select input" style={{ width: 'auto', padding: '7px 12px' }} value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort by">
             <option value="distance">Nearest</option><option value="rating">Top rated</option><option value="experience">Most experienced</option><option value="fee">Lowest fee</option>
           </select>
-          {user?.insuranceProvider && <button className={`chip ${onlyInsurance ? 'on' : ''}`} onClick={() => setOnlyInsurance(!onlyInsurance)}>🛡️ Takes {user.insuranceProvider}</button>}
+          {!!user?.insurances?.length && <button className={`chip ${onlyInsurance ? 'on' : ''}`} onClick={() => setOnlyInsurance(!onlyInsurance)}>🛡️ Takes {user.insurances.length > 1 ? 'one of my insurances' : user.insurances[0].provider}</button>}
           <button className={`chip ${onlyTele ? 'on' : ''}`} onClick={() => setOnlyTele(!onlyTele)}>📹 Video visits</button>
           <button className={`chip ${gender === 'F' ? 'on' : ''}`} onClick={() => setGender(gender === 'F' ? '' : 'F')}>Female doctor</button>
           <button className={`chip ${gender === 'M' ? 'on' : ''}`} onClick={() => setGender(gender === 'M' ? '' : 'M')}>Male doctor</button>

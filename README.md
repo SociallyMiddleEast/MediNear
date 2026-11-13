@@ -27,12 +27,26 @@ Open the URL Vite prints. On the sign-in screen, the **Try a demo account** butt
 
 | Area | Features |
 |---|---|
-| Sign up | Account type → account → **location detection** (GPS, then reverse geocoding, with a time-zone fallback; the user can override) → age, gender and blood type → **insurance plus any number of ID documents** (passport, national ID, licence…) → review and consent |
+| Sign up | Account type → account → **location detection** (GPS, then reverse geocoding, with a time-zone fallback; the user can override) → age, gender and blood type → **any number of insurance plans** (public, private, employer, top-up, travel) **and ID documents** (passport, national ID, licence…) → review and consent |
 | Patient | Home with nearby summary · doctors by specialty, search, filters (insurance, video, gender, sort) · full doctor profiles (education timeline, years in practice, clinics, certifications, awards, languages, insurers, reviews) · booking · **medicine price comparison across pharmacies** with reservations · hospitals with ER wait and beds · labs with test booking and **result tracking** · profile with insurance card and ID wallet |
 | Doctor portal | KPIs, 12-month visit trend, conditions mix, high-risk patients, weekly schedule (app bookings included), patient list with vitals and BP trend, lab results with out-of-range flags |
 | Pharmacy portal | Sales trend, best sellers, restock alerts, **editable inventory and prices** (patients see the changes right away), reservation workflow |
 | Hospital portal | Occupancy, ER volume, admissions by ward, critical patients, departments |
 | Lab portal | Sample pipeline (Booked → Sample taken → Analysing → Results ready). Moving an order to *ready* publishes results to the patient. Test catalogue. |
+
+### International coverage
+
+- **All ~200 countries:** names (from the browser, ready for translation), flag, currency, dialling code, ambulance number and a default map centre.
+- **Insurers:** local and national insurers for 60+ countries, plus 12 international insurers everywhere. "Other" lets anyone type their own.
+- **Locally styled demo data:** generated doctors get local names, local languages and mostly local medical schools.
+- **Location fallback:** GPS first, then the device time zone, then the browser language's region. The user can always pick the country manually.
+- **Not yet done:**
+  - The interface itself is English-only. Translations and right-to-left layout for Arabic are the next step.
+  - Prices are converted with approximate demo exchange rates.
+
+### Look and feel
+
+The light theme is blue and white, and the dark theme is teal. Users can switch with the ☀️/🌙 button, or choose Light, Dark or Auto under Profile → Appearance.
 
 Directory listings are **generated around the user's location**, so the app looks local wherever you open it. Each demo provider owns one "featured" listing (for example, Dr. Layla Haddad). Book with her as the patient, sign in as the doctor, and the booking is there.
 

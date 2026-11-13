@@ -3,6 +3,7 @@ import type { ReactElement } from 'react';
 import { useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
 import { ToastHost } from './components/ui';
+import { useTheme } from './services/theme';
 import Welcome from './pages/auth/Welcome';
 import SignIn from './pages/auth/SignIn';
 import SignUp from './pages/auth/SignUp';
@@ -47,6 +48,7 @@ function ProviderPatients() {
 }
 
 export default function App() {
+  useTheme(); // applies the saved / system theme and follows device changes
   return (
     <>
       <Routes>

@@ -42,10 +42,10 @@ async function withRegisteredProviders(dir: Directory, center: GeoPoint, city: s
 
 export function useDirectory(user: User | null) {
   const center = userCenter(user);
-  const [dir, setDir] = useState<Directory>(() => generateDirectory(center, user?.city ?? 'City Center', insurersFor(user?.country)));
+  const [dir, setDir] = useState<Directory>(() => generateDirectory(center, user?.city ?? 'City Center', insurersFor(user?.country), user?.country));
   useEffect(() => {
     const ins = insurersFor(user?.country);
-    const base = generateDirectory(center, user?.city ?? 'City Center', ins);
+    const base = generateDirectory(center, user?.city ?? 'City Center', ins, user?.country);
     withRegisteredProviders(base, center, user?.city ?? 'City Center', ins).then(setDir);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lng, user?.country]);

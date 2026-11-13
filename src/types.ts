@@ -11,6 +11,14 @@ export interface IdentityDoc {
   issuingCountry?: string;
 }
 
+export interface InsurancePlan {
+  provider: string;   // e.g. "AXA Middle East", "NSSF (CNSS)", "Cigna Global"
+  memberId: string;
+  type: string;       // Primary, Secondary / top-up, Employer plan, Travel…
+  policyHolder?: string; // when covered through a parent / spouse / employer
+  validUntil?: string;   // YYYY-MM-DD
+}
+
 export interface User {
   id: string;
   role: Role;
@@ -26,7 +34,10 @@ export interface User {
   dateOfBirth?: string;
   gender?: string;
   bloodType?: string;
+  insurances?: InsurancePlan[]; // a patient may hold several plans
+  /** @deprecated single-plan fields from v0.1 — migrated to `insurances` on read */
   insuranceProvider?: string;
+  /** @deprecated */
   insuranceId?: string;
   documents?: IdentityDoc[];
   // provider-only: links the account to a listing in the directory
