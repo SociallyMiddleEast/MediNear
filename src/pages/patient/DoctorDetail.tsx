@@ -3,12 +3,15 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useDirectory } from '../../services/directory';
 import { backend } from '../../services/backend';
-import { mulberry32 } from '../../data/generator';
-import { formatMoney } from '../../data/countries';
-import { Avatar, Empty, MiniMap, Modal, Stars, TopBar, fmtDate, km, toast } from '../../components/ui';
+import { distanceKm, mulberry32 } from '../../data/generator';
+import { emergencyNumber, formatMoney } from '../../data/countries';
+import { copyFor } from '../../data/specialtyContent';
+import { SPECIALTIES } from '../../data/catalog';
+import { Empty, TopBar, fmtDate, initials, km, toast } from '../../components/ui';
 import type { Appointment } from '../../types';
 
-const SLOT_TIMES = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00', '16:30'];
+const SLOT_TIMES = ['09:00', '10:30', '12:00', '14:30', '16:00', '17:30'];
+const go = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
 export default function DoctorDetail() {
   const { id } = useParams();
@@ -17,164 +20,259 @@ export default function DoctorDetail() {
   const nav = useNavigate();
   const d = dir.doctors.find((x) => x.id === id);
 
-  const days = useMemo(() => Array.from({ length: 10 }, (_, i) => { const x = new Date(); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() + i); return x; }).filter((x) => x.getDay() !== 0), []);
+  const days = useMemo(() => {
+    const out: Date[] = [];
+    const now = new Date();
+    const x = new Date(); x.setHours(0, 0, 0, 0);
+    // After the last slot of the day, start from tomorrow.
+    if (now.getHours() * 60 + now.getMinutes() >= 17 * 60 + 30) x.setDate(x.getDate() + 1);
+    while (out.length < 6) { if (x.getDay() !== 0) out.push(new Date(x)); x.setDate(x.getDate() + 1); }
+    return out;
+  }, []);
+  const [where, setWhere] = useState(0); // clinic index, or -1 for video
   const [day, setDay] = useState(0);
   const [slot, setSlot] = useState('');
-  const [mode, setMode] = useState<'clinic' | 'video'>('clinic');
-  const [clinicIdx, setClinicIdx] = useState(0);
   const [reason, setReason] = useState('');
-  const [open, setOpen] = useState(false);
   const [booked, setBooked] = useState<Appointment[]>([]);
-
-  useEffect(() => { if (d) backend.listAppointments({ doctorId: d.id }).then(setBooked); }, [d, open]);
+  const [sending, setSending] = useState(false);
+  useEffect(() => { if (d) backend.listAppointments({ doctorId: d.id }).then(setBooked); }, [d]);
+  useEffect(() => { window.scrollTo(0, 0); }, [id]);
 
   if (!d) return <><TopBar back title="Doctor" /><div className="page"><Empty icon="🤷" title="Doctor not found" /></div></>;
 
+  const copy = copyFor(d.specialty);
+  const icon = SPECIALTIES.find((s) => s.name === d.specialty)?.icon ?? '🩺';
+  const shortName = d.name.replace(/^Dr\.?\s+/, '');
+  const lastName = shortName.split(' ').slice(-1)[0];
   const selectedDay = days[day];
   const taken = (t: string) => {
-    const r = mulberry32(selectedDay.getDate() * 97 + d.photoHue + t.charCodeAt(1) * 13 + Number(t.slice(3)));
+    const r = mulberry32(selectedDay.getDate() * 97 + d.photoHue + Number(t.replace(':', '')));
     const [h, m] = t.split(':').map(Number);
     const dt = new Date(selectedDay); dt.setHours(h, m);
-    return r() < 0.35 || dt < new Date() || booked.some((b) => b.status !== 'cancelled' && new Date(b.date).getTime() === dt.getTime());
+    return r() < 0.3 || dt < new Date() || booked.some((b) => b.status !== 'cancelled' && new Date(b.date).getTime() === dt.getTime());
   };
   const myPlans = user?.insurances ?? [];
   const accepted = new Set(d.acceptsInsurance.map((a) => a.toLowerCase()));
   const coveredBy = myPlans.filter((p) => accepted.has(p.provider.toLowerCase()));
-  const covered = coveredBy.length > 0;
+  const md = d.education.find((e) => e.degree.includes('(MD)')) ?? d.education[0];
+  const lastTraining = d.education[d.education.length - 1];
+  const trainedIn = md.city === lastTraining.city ? `Trained in ${md.city},` : `Trained in ${md.city} and ${lastTraining.city},`;
+  const clinicShort = (name: string) => name.replace(new RegExp(`^${lastName}\\s+`), '').replace(/ Clinic$/, '') || name;
+  const affiliations = [...dir.hospitals].sort((a, b) => distanceKm(d.location, a.location) - distanceKm(d.location, b.location)).slice(0, 2 + (d.photoHue % 3));
+  const whereLabel = where === -1 ? 'Video visit' : clinicShort(d.clinics[where].name);
+  const towns = [...new Set(d.clinics.map((c) => c.address.split(', ').pop()))];
 
-  const book = async () => {
+  const send = async () => {
+    if (!slot) { toast('Pick a preferred time'); return; }
+    setSending(true);
     const [h, m] = slot.split(':').map(Number);
     const dt = new Date(selectedDay); dt.setHours(h, m, 0, 0);
     await backend.createAppointment({
       patientId: user!.id, patientName: user!.fullName, doctorId: d.id, doctorName: d.name, specialty: d.specialty,
-      clinic: mode === 'video' ? 'Video consultation' : d.clinics[clinicIdx].name, date: dt.toISOString(),
+      clinic: where === -1 ? 'Video consultation' : d.clinics[where].name, date: dt.toISOString(),
       reason: reason.trim() || 'Consultation', status: 'upcoming',
     });
-    setOpen(false); setSlot(''); setReason('');
-    toast(`Booked with ${d.name} on ${fmtDate(dt.toISOString())} at ${slot}`);
+    toast(`Request sent — ${fmtDate(dt.toISOString())} at ${slot}`);
     nav('/app/visits');
   };
 
   return (
-    <>
-      <TopBar back title={d.name} right={<button className="icon-btn" aria-label="Share" onClick={() => { navigator.clipboard?.writeText(location.href); toast('Link copied'); }}>↗</button>} />
-      <div className="page">
-        <div className="card stack">
-          <div className="row top">
-            <Avatar name={d.name} hue={d.photoHue} size="lg" />
-            <div className="grow stack sm">
-              <h2>{d.name}</h2>
-              <div className="muted small">{d.title}</div>
-              <Stars value={d.rating} count={d.reviewCount} />
-              <div className="row wrap" style={{ gap: 6 }}>
-                {d.subSpecialties.map((s) => <span key={s} className="chip primary">{s}</span>)}
-              </div>
-            </div>
+    <div className="dp">
+      {/* ---------- doctor header ---------- */}
+      <div className="dp-top">
+        <div className="dp-bar card">
+          <button className="icon-btn" aria-label="Back" onClick={() => nav(-1)}>←</button>
+          <div className="dp-mark" aria-hidden>{icon}</div>
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="bold ellipsis">{d.name}</div>
+            <div className="tiny muted ellipsis">{d.specialty}{d.subSpecialties[0] ? ` · ${d.subSpecialties[0]}` : ''}</div>
           </div>
-          <div className="grid sm" style={{ gridTemplateColumns: 'repeat(4, 1fr)', textAlign: 'center' }}>
-            <div className="stat"><span className="v">{d.yearsExperience}</span><span className="l">Years exp.</span></div>
-            <div className="stat"><span className="v">{(d.patientsTreated / 1000).toFixed(0)}k+</span><span className="l">Patients</span></div>
-            <div className="stat"><span className="v">{d.publications}</span><span className="l">Publications</span></div>
-            <div className="stat"><span className="v">{d.rating}</span><span className="l">Rating</span></div>
-          </div>
-          <div className="row wrap" style={{ gap: 8 }}>
-            <span className="chip">🗓️ Practising since {d.practisingSince}</span>
-            <span className="chip">💵 {formatMoney(d.fee, user?.country)} / visit</span>
-            {d.telehealth && <span className="chip info">📹 Video visits</span>}
-            {myPlans.length > 0 && <span className={`chip ${covered ? 'ok' : 'warn'}`}>{covered ? `✓ Accepts your ${coveredBy.map((p) => p.provider).join(' & ')}` : 'None of your insurances listed'}</span>}
-          </div>
-          <button className="btn block" onClick={() => setOpen(true)}>Book appointment</button>
-        </div>
-
-        <div className="grid two">
-          <div className="card stack">
-            <h3>About</h3>
-            <p>{d.bio}</p>
-            <blockquote style={{ margin: 0, padding: '10px 14px', borderLeft: '3px solid var(--primary)', background: 'var(--surface-2)', borderRadius: 8 }} className="small">“{d.philosophy}”</blockquote>
-            <div className="small"><span className="muted">Languages: </span>{d.languages.join(', ')}</div>
-          </div>
-
-          <div className="card stack">
-            <h3>🎓 Education & training</h3>
-            <div className="timeline">
-              {[...d.education].reverse().map((e) => (
-                <div className="item" key={e.degree}>
-                  <div className="bold small">{e.degree}</div>
-                  <div className="small">{e.school}, {e.city}</div>
-                  <div className="tiny muted">{e.from} – {e.to}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="card stack">
-            <h3>🏅 Certifications & awards</h3>
-            {d.certifications.map((c) => <div key={c} className="row small"><span>✅</span>{c}</div>)}
-            {d.awards.map((a) => <div key={a} className="row small"><span>🏆</span>{a}</div>)}
-            {!d.awards.length && <div className="tiny muted">No awards listed.</div>}
-          </div>
-
-          <div className="card stack">
-            <h3>📍 Clinics &amp; locations</h3>
-            <MiniMap center={center} pins={d.clinics.map((c) => ({ at: c.location, icon: '🏥', label: c.name }))} height={160} />
-            {d.clinics.map((c) => (
-              <div key={c.name} className="row top">
-                <div className="grow"><div className="bold small">{c.name}</div><div className="tiny muted">{c.address}</div></div>
-                <div style={{ textAlign: 'right' }}><div className="tiny bold">{km(center, c.location)}</div><div className="tiny muted">{c.days}</div></div>
-              </div>
-            ))}
-            <a className="btn ghost sm" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${d.clinics[0].location.lat},${d.clinics[0].location.lng}`}>Get directions</a>
-          </div>
-
-          <div className="card stack">
-            <h3>🛡️ Insurance accepted</h3>
-            <div className="row wrap" style={{ gap: 6 }}>
-              {d.acceptsInsurance.map((a) => <span key={a} className={`chip ${coveredBy.some((p) => p.provider.toLowerCase() === a.toLowerCase()) ? 'ok' : ''}`}>{a}</span>)}
-              <span className="chip">Self-pay</span>
-            </div>
-          </div>
-
-          <div className="card stack">
-            <div className="row between"><h3>💬 Patient reviews</h3><Stars value={d.rating} count={d.reviewCount} /></div>
-            {d.reviews.map((r, i) => (
-              <div key={i} className="stack sm" style={{ borderTop: i ? '1px solid var(--border)' : 0, paddingTop: i ? 10 : 0 }}>
-                <div className="row between small"><b>{r.author}</b><span className="stars">{'★'.repeat(r.rating)}<span style={{ opacity: 0.25 }}>{'★'.repeat(5 - r.rating)}</span></span></div>
-                <div className="small">{r.text}</div>
-                <div className="tiny muted">{fmtDate(r.date, { month: 'long', year: 'numeric' })}</div>
-              </div>
-            ))}
-          </div>
+          <nav className="dp-links" aria-label="Sections">
+            <button onClick={() => go('dp-services')}>Services</button>
+            <button onClick={() => go('dp-about')}>About</button>
+            <button onClick={() => go('dp-visit')}>Your visit</button>
+            <button onClick={() => go('dp-clinics')}>Clinics</button>
+          </nav>
+          <button className="dp-dark-btn" onClick={() => go('dp-book')}>📅 <span>Book a visit</span></button>
         </div>
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Book a visit">
-        <div className="row" style={{ gap: 8 }}>
-          <button className={`chip grow ${mode === 'clinic' ? 'on' : ''}`} onClick={() => setMode('clinic')}>🏥 In clinic</button>
-          <button className={`chip grow ${mode === 'video' ? 'on' : ''}`} disabled={!d.telehealth} onClick={() => setMode('video')}>📹 Video{!d.telehealth ? ' (n/a)' : ''}</button>
-        </div>
-        {mode === 'clinic' && d.clinics.length > 1 && (
-          <select className="select input" value={clinicIdx} onChange={(e) => setClinicIdx(Number(e.target.value))}>
-            {d.clinics.map((c, i) => <option key={c.name} value={i}>{c.name} ({c.days})</option>)}
-          </select>
-        )}
-        <div className="chips">
-          {days.map((x, i) => (
-            <button key={i} className={`slot ${day === i ? 'on' : ''}`} onClick={() => { setDay(i); setSlot(''); }} style={{ minWidth: 64, textAlign: 'center' }}>
-              <div className="tiny" style={{ opacity: 0.8 }}>{x.toLocaleDateString('en', { weekday: 'short' })}</div>
-              <div>{x.getDate()}</div>
-            </button>
+      <div className="dp-page">
+        {/* ---------- hero + booking ---------- */}
+        <section className="dp-hero-row">
+          <div className="dp-hero">
+            <div className="dp-circle" aria-hidden><div className="dp-circle-in">{icon}</div></div>
+            <span className="dp-pill"><i className="dp-dot" />{towns.length > 1 ? `Clinics in ${towns.join(' & ')}` : `Clinic in ${towns[0]}`}{d.telehealth ? ' · Video visits' : ''}</span>
+            <h1 className="dp-h1">{copy.headline}<br /><em>{copy.tagline}</em></h1>
+            <p className="dp-lead">{copy.intro} Consultations in {d.languages.join(', ').replace(/, ([^,]*)$/, ' and $1')}.</p>
+            <div className="row wrap" style={{ gap: 10 }}>
+              <button className="dp-btn" onClick={() => go('dp-book')}>Book an appointment</button>
+              <button className="dp-btn ghost" onClick={() => go('dp-services')}>Explore services</button>
+            </div>
+          </div>
+
+          <div className="dp-book card" id="dp-book">
+            <div className="row between"><h2>Request a visit</h2><span className="small muted">{selectedDay.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</span></div>
+            <div className="dp-label">Where</div>
+            <div className="dp-seg">
+              {d.clinics.map((c, i) => <button key={c.name} className={where === i ? 'on' : ''} onClick={() => setWhere(i)} title={c.name}>{clinicShort(c.name)}</button>)}
+              {d.telehealth && <button className={where === -1 ? 'on' : ''} onClick={() => setWhere(-1)}>Video</button>}
+            </div>
+            <div className="dp-label">Day</div>
+            <div className="dp-days">
+              {days.map((x, i) => (
+                <button key={i} className={day === i ? 'on' : ''} onClick={() => { setDay(i); setSlot(''); }}>
+                  <span>{x.toLocaleDateString('en', { weekday: 'short' })}</span><b>{x.getDate()}</b>
+                </button>
+              ))}
+            </div>
+            <div className="dp-label">Preferred time</div>
+            <div className="dp-times">
+              {SLOT_TIMES.map((t) => <button key={t} className={slot === t ? 'on' : ''} disabled={taken(t)} onClick={() => setSlot(t)}>{t}</button>)}
+            </div>
+            <textarea className="input" rows={2} placeholder="Reason for visit (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+            <div className="dp-summary">
+              <div className="tiny muted">Your request · booking as {user?.fullName}</div>
+              <div className="bold">{whereLabel} · {fmtDate(selectedDay.toISOString())}{slot ? ` · ${slot}` : ''}</div>
+              <div className="tiny muted">
+                {formatMoney(d.fee, user?.country)} consultation{coveredBy.length ? ` · billed to ${coveredBy[0].provider}` : myPlans.length ? ' · your insurance isn’t listed (self-pay)' : ''}
+              </div>
+              <button className="dp-btn sm" onClick={send} disabled={sending}>{sending ? 'Sending…' : 'Send request'}</button>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------- meet your doctor ---------- */}
+        <section className="dp-about-row" id="dp-about">
+          <div className="dp-portrait card">
+            <div className="dp-portrait-art" style={{ ['--h' as string]: d.photoHue }}><span>{initials(d.name)}</span></div>
+            <div className="dp-portrait-cap">
+              <div className="bold">{d.name}, MD</div>
+              <div className="tiny muted">{d.title}</div>
+            </div>
+          </div>
+          <div className="card dp-about">
+            <div className="dp-eyebrow">Meet your doctor</div>
+            <h2 className="dp-h2">{trainedIn} <em>practising close to home.</em></h2>
+            <p className="muted">{d.bio} {d.philosophy}</p>
+            <div className="row wrap" style={{ gap: 8 }}>
+              {d.education.slice(1).map((e) => <span key={e.degree} className="dp-chip">{e.degree.split(',')[0]} · {e.school}</span>)}
+              <span className="dp-chip">{d.languages.join(' · ')}</span>
+            </div>
+          </div>
+          <div className="dp-stats">
+            <div className="dp-stat blue"><span>⭐</span><b>{d.practisingSince}</b><small>in practice since</small></div>
+            <div className="dp-stat card"><span>👥</span><b>{(d.patientsTreated / 1000).toFixed(0)}k+</b><small>patients treated</small></div>
+            <div className="dp-stat card"><span>★</span><b>{d.rating.toFixed(1)}</b><small>{d.reviewCount} patient reviews</small></div>
+            {d.telehealth
+              ? <div className="dp-stat card"><span>📹</span><b className="sm">Video visits</b><small>Follow-ups from home</small></div>
+              : <div className="dp-stat card"><span>📚</span><b>{d.publications}</b><small>publications</small></div>}
+          </div>
+        </section>
+
+        {/* ---------- services ---------- */}
+        <section className="card dp-section" id="dp-services">
+          <div className="dp-section-head">
+            <h2 className="dp-h2">How I can <em>help</em></h2>
+            <p className="small muted">Not sure what you need? Start with a consultation and we’ll decide together whether any tests or procedures are needed.</p>
+          </div>
+          <div className="dp-services">
+            {copy.services.map((s) => (
+              <div key={s.title} className="dp-service">
+                <div className="dp-service-ico">{s.icon}</div>
+                <div><div className="bold">{s.title}</div><div className="small muted">{s.text}</div></div>
+              </div>
+            ))}
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <span className="tiny muted">Special interests:</span>
+            {d.subSpecialties.map((s) => <span key={s} className="dp-chip">{s}</span>)}
+          </div>
+        </section>
+
+        {/* ---------- your visit ---------- */}
+        <section className="dp-steps" id="dp-visit">
+          <div className="dp-step soft">
+            <div className="dp-eyebrow">Your visit</div>
+            <h2 className="dp-h2">Three simple steps, <em>zero stress.</em></h2>
+          </div>
+          <div className="dp-step card"><div className="dp-num">01</div><h3>Request a time</h3><p className="small muted">Use the form above. The clinic confirms your appointment in the app.</p></div>
+          <div className="dp-step card"><div className="dp-num">02</div><h3>Talk it through</h3><p className="small muted">A careful consultation and examination. Bring previous reports, lab results and your list of medicines.</p></div>
+          <div className="dp-step ink"><div className="dp-num">03</div><h3>Leave with a plan</h3><p className="small">Clear next steps — tests, prescriptions sent to your pharmacy, and an easy way to follow up.</p></div>
+        </section>
+
+        {/* ---------- affiliations, credentials, insurance ---------- */}
+        <section className="card dp-section">
+          <div className="dp-section-head">
+            <h2 className="dp-h2">Hospital <em>affiliations</em></h2>
+            <p className="small muted">Procedures and admissions take place at:</p>
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            {affiliations.map((h) => <button key={h.id} className="dp-chip dot" onClick={() => nav(`/app/hospitals/${h.id}`)}>{h.name}</button>)}
+          </div>
+          <div className="dp-cols">
+            <div className="stack sm">
+              <div className="dp-label">Certifications & awards</div>
+              {d.certifications.map((c) => <div key={c} className="small">✓ {c}</div>)}
+              {d.awards.map((a) => <div key={a} className="small">🏆 {a}</div>)}
+            </div>
+            <div className="stack sm">
+              <div className="dp-label">Insurance accepted</div>
+              <div className="row wrap" style={{ gap: 6 }}>
+                {d.acceptsInsurance.map((a) => (
+                  <span key={a} className={`chip ${coveredBy.some((p) => p.provider.toLowerCase() === a.toLowerCase()) ? 'ok' : ''}`}>{a}</span>
+                ))}
+                <span className="chip">Self-pay · {formatMoney(d.fee, user?.country)}</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ---------- reviews ---------- */}
+        <section className="card dp-section">
+          <div className="dp-section-head">
+            <h2 className="dp-h2">What patients <em>say</em></h2>
+            <p className="small muted"><span className="stars">★</span> <b>{d.rating.toFixed(1)}</b> from {d.reviewCount} verified reviews</p>
+          </div>
+          <div className="dp-reviews">
+            {d.reviews.map((r, i) => (
+              <figure key={i} className="dp-review">
+                <div className="stars">{'★'.repeat(r.rating)}<span style={{ opacity: 0.25 }}>{'★'.repeat(5 - r.rating)}</span></div>
+                <blockquote>“{r.text}”</blockquote>
+                <figcaption className="tiny muted">{r.author} · {fmtDate(r.date, { month: 'long', year: 'numeric' })}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </section>
+
+        {/* ---------- clinics ---------- */}
+        <section className="dp-clinics" id="dp-clinics">
+          {d.clinics.map((c) => (
+            <div key={c.name} className="card dp-clinic">
+              <div className="dp-map" aria-hidden><i className="dp-pin" /></div>
+              <div className="stack sm" style={{ padding: '14px 16px 16px' }}>
+                <div className="row between"><h3>{clinicShort(c.name)} clinic</h3><span className="tiny muted">{km(center, c.location)} away</span></div>
+                <div className="small muted">{c.name} · {c.address}</div>
+                <div className="tiny muted">Open {c.days}</div>
+                <a className="small bold" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${c.location.lat},${c.location.lng}`}>Open in Maps →</a>
+              </div>
+            </div>
           ))}
-        </div>
-        <div className="grid sm" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))' }}>
-          {SLOT_TIMES.map((t) => <button key={t} className={`slot ${slot === t ? 'on' : ''}`} disabled={taken(t)} onClick={() => setSlot(t)}>{t}</button>)}
-        </div>
-        <textarea className="input" rows={2} placeholder="Reason for visit (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
-        <div className="row between small">
-          <span className="muted">Consultation fee</span>
-          <b>{formatMoney(d.fee, user?.country)}{covered ? ` · billed to ${coveredBy[0].provider}` : ''}</b>
-        </div>
-        <button className="btn block" disabled={!slot} onClick={book}>{slot ? `Confirm ${fmtDate(selectedDay.toISOString())} at ${slot}` : 'Pick a time'}</button>
-      </Modal>
-    </>
+        </section>
+
+        {/* ---------- CTA ---------- */}
+        <section className="dp-cta">
+          <h2 className="dp-h2">Let’s talk about <em>your health.</em></h2>
+          <div className="dp-cta-row">
+            <span>📍 {d.clinics[0].address}</span>
+            {d.telehealth && <span>📹 Video consultations available</span>}
+          </div>
+          <button className="dp-btn light block" onClick={() => go('dp-book')}>Book an appointment</button>
+        </section>
+        <p className="tiny muted dp-foot">
+          In an emergency, call {emergencyNumber(user?.country)} or go to the nearest emergency department.
+        </p>
+      </div>
+    </div>
   );
 }

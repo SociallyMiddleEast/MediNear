@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { GeoPoint, User } from '../types';
-import { insurersFor } from '../data/countries';
+import { countryName, insurersFor } from '../data/countries';
 import { generateDirectory, makeDoctor, makeHospital, makeLab, makePharmacy, mulberry32, type Directory } from '../data/generator';
 import { backend } from './backend';
 import { centerOf } from './location';
@@ -42,11 +42,11 @@ async function withRegisteredProviders(dir: Directory, center: GeoPoint, city: s
 
 export function useDirectory(user: User | null) {
   const center = userCenter(user);
-  const [dir, setDir] = useState<Directory>(() => generateDirectory(center, user?.city ?? 'City Center', insurersFor(user?.country), user?.country));
+  const [dir, setDir] = useState<Directory>(() => generateDirectory(center, (user?.city || (user?.country ? countryName(user.country) : 'City Center')), insurersFor(user?.country), user?.country));
   useEffect(() => {
     const ins = insurersFor(user?.country);
-    const base = generateDirectory(center, user?.city ?? 'City Center', ins, user?.country);
-    withRegisteredProviders(base, center, user?.city ?? 'City Center', ins).then(setDir);
+    const base = generateDirectory(center, (user?.city || (user?.country ? countryName(user.country) : 'City Center')), ins, user?.country);
+    withRegisteredProviders(base, center, (user?.city || (user?.country ? countryName(user.country) : 'City Center')), ins).then(setDir);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [center.lat, center.lng, user?.country]);
   return { dir, center };
